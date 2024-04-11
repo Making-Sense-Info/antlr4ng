@@ -40,7 +40,6 @@
         "unicode-properties": "1.4.1"
     },
     "scripts": {
-        "prepublishOnly": "npm run build && npm run test",
         "build": "tsc && npm run build-cjs && npm run build-mjs",
         "build-with-maps": "tsc && npm run build-mjs -- --sourcemap",
         "build-and-test": "npm run build && npm run test",
