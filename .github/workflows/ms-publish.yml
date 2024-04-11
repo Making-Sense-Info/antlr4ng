@@ -1,0 +1,35 @@
+name: Publish to npm
+
+on:
+  push:
+    branches:
+      - master 
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: yarn
+
+      - name: Build package
+        run: yarn build
+
+      - name: Customize package
+        run: |
+            chmod +x custom/prepublish.sh
+            custom/prepublish.sh
+
+      - name: Publish to npm
+        run: yarn publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
