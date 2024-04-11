@@ -4,7 +4,7 @@
     "description": "Alternative JavaScript/TypeScript runtime for ANTLR4",
     "main": "dist/index.js",
     "types": "dist/index.d.ts",
-    "repository": "https://github.com/mike-lischke/antlr4ng",
+    "repository": "https://github.com/Making-Sense-Info/antlr4ng",
     "keywords": [
         "lexer",
         "parser",
@@ -15,9 +15,9 @@
     ],
     "license": "BSD-3-Clause",
     "bugs": {
-        "url": "https://github.com/mike-lischke/antlr4ng/issues"
+        "url": "https://github.com/Making-Sense-Info/antlr4ng/issues"
     },
-    "homepage": "https://github.com/mike-lischke/antlr4ng",
+    "homepage": "https://github.com/Making-Sense-Info/antlr4ng",
     "peerDependencies": {
         "antlr4ng-cli": "^2.0.0"
     },
