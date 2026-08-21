@@ -4,12 +4,13 @@
  * can be found in the LICENSE.txt file in the project root.
  */
 
+import type { IComparable } from "../utils/helpers.js";
 import { HashMap } from "./HashMap.js";
 
 /**
  * This class extends `HashMap` to maintain the insertion order of the keys.
  */
-export class OrderedHashMap<K, V> extends HashMap<K, V> {
+export class OrderedHashMap<K extends IComparable, V> extends HashMap<K, V> {
     #keys: K[] = [];
 
     public override clear(): void {
@@ -69,7 +70,7 @@ export class OrderedHashMap<K, V> extends HashMap<K, V> {
     /**
      * @returns an iterable of the keys in the map, in the order they were inserted.
      */
-    public keys(): IterableIterator<K> {
+    public override keys(): IterableIterator<K> {
         return this.#keys[Symbol.iterator]();
     }
 

@@ -4,7 +4,9 @@
  * can be found in the LICENSE.txt file in the project root.
  */
 
-import { BitSet } from "../src/misc/BitSet.js";
+import { describe, expect, it } from "vitest";
+
+import { BitSet } from "../../src/misc/BitSet.js";
 
 describe("BitSet", () => {
     it("Initialize  with all bits set to false", () => {

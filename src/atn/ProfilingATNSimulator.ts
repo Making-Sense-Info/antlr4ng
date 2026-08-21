@@ -36,8 +36,8 @@ export class ProfilingATNSimulator extends ParserATNSimulator {
      */
     protected conflictingAltResolvedBySLL: number | undefined;
 
-    #sllStopIndex: number = 0;
-    #llStopIndex: number = 0;
+    private sllStopIndex: number = 0;
+    private llStopIndex: number = 0;
 
     public constructor(parser: Parser) {
         const sharedContextCache = parser.interpreter.sharedContextCache;
@@ -53,8 +53,8 @@ export class ProfilingATNSimulator extends ParserATNSimulator {
 
     public override adaptivePredict(input: TokenStream, decision: number, outerContext: ParserRuleContext): number {
         try {
-            this.#sllStopIndex = -1;
-            this.#llStopIndex = -1;
+            this.sllStopIndex = -1;
+            this.llStopIndex = -1;
             this.currentDecision = decision;
 
             // JavaScript doesn't have native support for nanosecond precision timers.
@@ -66,7 +66,7 @@ export class ProfilingATNSimulator extends ParserATNSimulator {
             this.decisions[decision].timeInPrediction += (stop - start);
             this.decisions[decision].invocations++;
 
-            const sllLook = this.#sllStopIndex - this.predictionState!.startIndex + 1;
+            const sllLook = this.sllStopIndex - this.predictionState!.startIndex + 1;
             this.decisions[decision].sllTotalLook += sllLook;
             this.decisions[decision].sllMinLook = this.decisions[decision].sllMinLook === 0
                 ? sllLook
@@ -80,14 +80,14 @@ export class ProfilingATNSimulator extends ParserATNSimulator {
                     predictedAlt: alt,
                     input,
                     startIndex: this.predictionState!.startIndex,
-                    stopIndex: this.#sllStopIndex,
+                    stopIndex: this.sllStopIndex,
                     fullCtx: false,
 
                 };
             }
 
-            if (this.#llStopIndex >= 0) {
-                const llLook = this.#llStopIndex - this.predictionState!.startIndex + 1;
+            if (this.llStopIndex >= 0) {
+                const llLook = this.llStopIndex - this.predictionState!.startIndex + 1;
                 this.decisions[decision].llTotalLook += llLook;
                 this.decisions[decision].llMinLook = this.decisions[decision].llMinLook === 0
                     ? llLook
@@ -101,7 +101,7 @@ export class ProfilingATNSimulator extends ParserATNSimulator {
                         predictedAlt: alt,
                         input,
                         startIndex: this.predictionState!.startIndex,
-                        stopIndex: this.#llStopIndex,
+                        stopIndex: this.llStopIndex,
                         fullCtx: true,
                     };
                 }
@@ -114,31 +114,28 @@ export class ProfilingATNSimulator extends ParserATNSimulator {
     }
 
     public override getExistingTargetState(previousD: DFAState, t: number): DFAState | undefined {
-        if (this.predictionState?.input) {
-            this.#sllStopIndex = this.predictionState.input.index;
+        // This method is called after each time the input position advances during SLL prediction.
+        this.sllStopIndex = this.predictionState!.input!.index;
 
-            const existingTargetState = super.getExistingTargetState(previousD, t);
+        const existingTargetState = super.getExistingTargetState(previousD, t);
 
-            if (existingTargetState !== null) {
-                this.decisions[this.currentDecision].sllDFATransitions++;
-                if (existingTargetState === ATNSimulator.ERROR) {
-                    this.decisions[this.currentDecision].errors.push({
-                        decision: this.currentDecision,
-                        configs: previousD.configs,
-                        input: this.predictionState.input,
-                        startIndex: this.predictionState.startIndex,
-                        stopIndex: this.#sllStopIndex,
-                        fullCtx: false,
-                    });
-                }
+        if (existingTargetState !== undefined) {
+            this.decisions[this.currentDecision].sllDFATransitions++; // Count only if we transition over a DFA state.
+            if (existingTargetState === ATNSimulator.ERROR) {
+                this.decisions[this.currentDecision].errors.push({
+                    decision: this.currentDecision,
+                    configs: previousD.configs,
+                    input: this.predictionState!.input!,
+                    startIndex: this.predictionState!.startIndex,
+                    stopIndex: this.sllStopIndex,
+                    fullCtx: false,
+                });
             }
-
-            this.currentState = existingTargetState;
-
-            return existingTargetState;
         }
 
-        return undefined;
+        this.currentState = existingTargetState;
+
+        return existingTargetState;
     }
 
     public override computeTargetState(dfa: DFA, previousD: DFAState, t: number): DFAState {
@@ -150,7 +147,7 @@ export class ProfilingATNSimulator extends ParserATNSimulator {
 
     public override computeReachSet(closure: ATNConfigSet, t: number, fullCtx: boolean): ATNConfigSet | null {
         if (fullCtx && this.predictionState?.input) {
-            this.#llStopIndex = this.predictionState.input.index;
+            this.llStopIndex = this.predictionState.input.index;
         }
 
         const reachConfigs = super.computeReachSet(closure, t, fullCtx);
@@ -164,7 +161,7 @@ export class ProfilingATNSimulator extends ParserATNSimulator {
                         configs: closure,
                         input: this.predictionState.input,
                         startIndex: this.predictionState.startIndex,
-                        stopIndex: this.#sllStopIndex,
+                        stopIndex: this.sllStopIndex,
                         fullCtx: true,
                     });
                 }
@@ -176,7 +173,7 @@ export class ProfilingATNSimulator extends ParserATNSimulator {
                         configs: closure,
                         input: this.predictionState.input,
                         startIndex: this.predictionState.startIndex,
-                        stopIndex: this.#sllStopIndex,
+                        stopIndex: this.sllStopIndex,
                         fullCtx: false,
                     });
                 }

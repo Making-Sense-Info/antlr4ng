@@ -11,6 +11,8 @@ import { type Interval } from "./misc/Interval.js";
 import { IntStream } from "./IntStream.js";
 
 export interface CharStream extends IntStream {
+    name: string;
+
     /**
      * Reset the stream so that it's in the same state it was
      * when the object was created *except* the data array is not
@@ -103,7 +105,7 @@ export class CharStreamImpl implements CharStream {
      */
     public seek(index: number): void {
         if (index <= this.index) {
-            this.index = index; // just jump; don't update stream state (line,
+            this.index = index; // just jump; don't update stream state.
 
             return;
         }
@@ -123,7 +125,7 @@ export class CharStreamImpl implements CharStream {
             return "";
         }
 
-        return this.#stringFromRange(start, stop + 1);
+        return this.stringFromRange(start, stop + 1);
     }
 
     public getTextFromInterval(interval: Interval): string {
@@ -138,11 +140,11 @@ export class CharStreamImpl implements CharStream {
             return "";
         }
 
-        return this.#stringFromRange(start, stop + 1);
+        return this.stringFromRange(start, stop + 1);
     }
 
     public toString(): string {
-        return this.#stringFromRange(0);
+        return this.stringFromRange(0);
     }
 
     public get size(): number {
@@ -157,7 +159,7 @@ export class CharStreamImpl implements CharStream {
         return IntStream.UNKNOWN_SOURCE_NAME;
     }
 
-    #stringFromRange(start: number, stop?: number): string {
+    private stringFromRange(start: number, stop?: number): string {
         const data = this.data.slice(start, stop);
         let result = "";
         data.forEach((value) => {

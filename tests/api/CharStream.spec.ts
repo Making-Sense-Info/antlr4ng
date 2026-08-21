@@ -4,7 +4,9 @@
  * can be found in the LICENSE.txt file in the project root.
  */
 
-import { CharStreamImpl as CharStream, IntStream, Interval } from "../src/index.js";
+import { describe, expect, it } from "vitest";
+
+import { CharStreamImpl as CharStream, IntStream, Interval } from "../../src/index.js";
 
 const unicodeInput = "Hello 👋, World! 😁";
 

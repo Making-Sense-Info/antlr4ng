@@ -4,20 +4,21 @@
  * can be found in the LICENSE.txt file in the project root.
  */
 
-import { Token } from "../Token.js";
-import { IntervalSet } from "../misc/IntervalSet.js";
-import { RuleTransition } from "./RuleTransition.js";
-import { NotSetTransition } from "./NotSetTransition.js";
-import { predictionContextFromRuleContext } from "./PredictionContextUtils.js";
-import { PredictionContext } from "./PredictionContext.js";
-import { SingletonPredictionContext } from "./SingletonPredictionContext.js";
-import { BitSet } from "../misc/BitSet.js";
-import { ATNState } from "./ATNState.js";
-import { ATN } from "./ATN.js";
 import { ParserRuleContext } from "../ParserRuleContext.js";
-import { Transition } from "./Transition.js";
+import { Token } from "../Token.js";
+import { BitSet } from "../misc/BitSet.js";
 import { HashSet } from "../misc/HashSet.js";
+import { IntervalSet } from "../misc/IntervalSet.js";
+import { ATN } from "./ATN.js";
 import { ATNConfig } from "./ATNConfig.js";
+import { ATNState } from "./ATNState.js";
+import { EmptyPredictionContext } from "./EmptyPredictionContext.js";
+import { NotSetTransition } from "./NotSetTransition.js";
+import { PredictionContext } from "./PredictionContext.js";
+import { predictionContextFromRuleContext } from "./PredictionContextUtils.js";
+import { RuleTransition } from "./RuleTransition.js";
+import { Transition } from "./Transition.js";
+import { createSingletonPredictionContext } from "./helpers.js";
 
 export class LL1Analyzer {
     /**
@@ -26,30 +27,26 @@ export class LL1Analyzer {
      */
     private static readonly hitPredicate = Token.INVALID_TYPE;
 
-    #atn: ATN;
+    public constructor(private atn: ATN) { }
 
     /**
      * Calculates the SLL(1) expected lookahead set for each outgoing transition
      * of an {@link ATNState}. The returned array has one element for each
      * outgoing transition in `s`. If the closure from transition
      * _i_ leads to a semantic predicate before matching a symbol, the
-     * element at index *i* of the result will be `null`.
+     * element at index *i* of the result will be `undefined`.
      *
      * @param s the ATN state
      * @returns the expected symbols for each outgoing transition of `s`.
      */
-    public getDecisionLookahead(s?: ATNState): Array<IntervalSet | null> | undefined {
-        if (!s) {
-            return undefined;
-        }
-
+    public getDecisionLookahead(s: ATNState): Array<IntervalSet | undefined> {
         const count = s.transitions.length;
         const look = new Array<IntervalSet>(count);
         for (let alt = 0; alt < count; alt++) {
             const set = new IntervalSet();
             const lookBusy = new HashSet<ATNConfig>();
-            this.doLook(s.transitions[alt].target, undefined, PredictionContext.EMPTY, set, lookBusy, new BitSet(),
-                false, false);
+            this.doLook(s.transitions[alt].target, undefined, EmptyPredictionContext.instance, set, lookBusy,
+                new BitSet(), false, false);
 
             // Add lookahead for this alternative if we found something
             // and we had no predicate when we !seeThruPreds.
@@ -70,7 +67,6 @@ export class LL1Analyzer {
      * If `ctx` is not `null` and the end of the outermost rule is
      * reached, {@link Token//EOF} is added to the result set.
      *
-     * @param atn the ATN
      * @param s the ATN state
      * @param stopState the ATN state to stop at. This can be a
      * {@link BlockEndState} to detect epsilon paths through a closure.
@@ -80,11 +76,10 @@ export class LL1Analyzer {
      * @returns The set of tokens that can follow `s` in the ATN in the
      * specified `ctx`.
      */
-    public look(atn: ATN, s: ATNState, stopState?: ATNState, ctx?: ParserRuleContext): IntervalSet {
-        this.#atn = atn;
+    public look(s: ATNState, stopState?: ATNState, ctx?: ParserRuleContext): IntervalSet {
         const r = new IntervalSet();
 
-        const lookContext = ctx ? predictionContextFromRuleContext(atn, ctx) : null;
+        const lookContext = ctx ? predictionContextFromRuleContext(this.atn, ctx) : null;
         this.doLook(s, stopState, lookContext, r, new HashSet(), new BitSet(), true, true);
 
         return r;
@@ -150,16 +145,16 @@ export class LL1Analyzer {
                 return;
             }
 
-            if (ctx !== PredictionContext.EMPTY) {
+            if (ctx !== EmptyPredictionContext.instance) {
                 const removed = calledRuleStack.get(s.ruleIndex);
                 try {
                     calledRuleStack.clear(s.ruleIndex);
 
                     // run thru all possible stack tops in ctx
                     for (let i = 0; i < ctx.length; i++) {
-                        const returnState = this.#atn.states[ctx.getReturnState(i)]!;
-                        this.doLook(returnState, stopState, ctx.getParent(i), look, lookBusy,
-                            calledRuleStack, seeThruPreds, addEOF);
+                        const returnState = this.atn.states[ctx.getReturnState(i)]!;
+                        this.doLook(returnState, stopState, ctx.getParent(i), look, lookBusy, calledRuleStack,
+                            seeThruPreds, addEOF);
                     }
                 } finally {
                     if (removed) {
@@ -178,7 +173,7 @@ export class LL1Analyzer {
                         continue;
                     }
 
-                    const newContext = SingletonPredictionContext.create(ctx ?? undefined,
+                    const newContext = createSingletonPredictionContext(ctx ?? undefined,
                         (t as RuleTransition).followState.stateNumber);
                     try {
                         calledRuleStack.set(t.target.ruleIndex);
@@ -201,7 +196,7 @@ export class LL1Analyzer {
                 }
 
                 case Transition.WILDCARD: {
-                    look.addRange(Token.MIN_USER_TOKEN_TYPE, this.#atn.maxTokenType);
+                    look.addRange(Token.MIN_USER_TOKEN_TYPE, this.atn.maxTokenType);
                     break;
                 }
 
@@ -212,7 +207,7 @@ export class LL1Analyzer {
                         let set = t.label;
                         if (set) {
                             if (t instanceof NotSetTransition) {
-                                set = set.complement(Token.MIN_USER_TOKEN_TYPE, this.#atn.maxTokenType);
+                                set = set.complement(Token.MIN_USER_TOKEN_TYPE, this.atn.maxTokenType);
                             }
                             look.addSet(set);
                         }

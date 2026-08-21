@@ -13,13 +13,14 @@ import { Interval } from "./misc/Interval.js";
 import { TokenStream } from "./TokenStream.js";
 import { TokenSource } from "./TokenSource.js";
 import { ParserRuleContext } from "./ParserRuleContext.js";
+import { isWritableToken } from "./WritableToken.js";
 
 /**
  * This implementation of {@link TokenStream} loads tokens from a
  * {@link TokenSource} on-demand, and places the tokens in a buffer to provide
  * access to any previous token by index.
  *
- * This token stream ignores the value of {@link Token.getChannel}. If your
+ * This token stream ignores the value of {@link Token.channel}. If your
  * parser requires the token stream filter tokens to only those on a particular
  * channel, such as {@link Token.DEFAULT_CHANNEL} or
  * {@link Token.HIDDEN_CHANNEL}, use a filtering token stream such a {@link CommonTokenStream}.
@@ -151,7 +152,10 @@ export class BufferedTokenStream implements TokenStream {
 
         for (let i = 0; i < n; i++) {
             const t = this.tokenSource.nextToken();
-            t.tokenIndex = this.tokens.length;
+            if (isWritableToken(t)) {
+                t.tokenIndex = this.tokens.length;
+            }
+
             this.tokens.push(t);
             if (t.type === Token.EOF) {
                 this.fetchedEOF = true;
@@ -303,13 +307,27 @@ export class BufferedTokenStream implements TokenStream {
     }
 
     /**
-     * Given a starting index, return the index of the previous token on channel.
-     * Return i if tokens[i] is on channel. Return -1 if there are no tokens
-     * on channel between i and 0.
+     * Given a starting index, return the index of the previous token on
+     * channel. Return `i` if `tokens[i]` is on channel. Return -1
+     * if there are no tokens on channel between `i` and 0.
+     *
+     * If `i` specifies an index at or after the EOF token, the EOF token
+     * index is returned. This is due to the fact that the EOF token is treated
+     * as though it were on every channel.
      */
     public previousTokenOnChannel(i: number, channel: number): number {
-        while (i >= 0 && this.tokens[i].channel !== channel) {
-            i -= 1;
+        if (i >= this.tokens.length) {
+            // The EOF token is on every channel.
+            return this.tokens.length - 1;
+        }
+
+        while (i >= 0) {
+            const token = this.tokens[i];
+            if (token.type === Token.EOF || token.channel === channel) {
+                return i;
+            }
+
+            --i;
         }
 
         return i;
@@ -320,7 +338,7 @@ export class BufferedTokenStream implements TokenStream {
      * the current token up until we see a token on DEFAULT_TOKEN_CHANNEL or
      * EOF. If channel is -1, find any non default channel token.
      */
-    public getHiddenTokensToRight(tokenIndex: number, channel: number): Token[] | undefined {
+    public getHiddenTokensToRight(tokenIndex: number, channel?: number): Token[] | undefined {
         if (channel === undefined) {
             channel = -1;
         }
@@ -342,7 +360,7 @@ export class BufferedTokenStream implements TokenStream {
      * the current token up until we see a token on DEFAULT_TOKEN_CHANNEL.
      * If channel is -1, find any non default channel token.
      */
-    public getHiddenTokensToLeft(tokenIndex: number, channel: number): Token[] | undefined {
+    public getHiddenTokensToLeft(tokenIndex: number, channel?: number): Token[] | undefined {
         if (channel === undefined) {
             channel = -1;
         }
@@ -374,6 +392,7 @@ export class BufferedTokenStream implements TokenStream {
                 hidden.push(t);
             }
         }
+
         if (hidden.length === 0) {
             return undefined;
         }
@@ -432,5 +451,13 @@ export class BufferedTokenStream implements TokenStream {
     public fill(): void {
         this.lazyInit();
         while (this.fetch(1000) === 1000) { ; }
+    }
+
+    public setLine(line: number): void {
+        this.tokenSource.line = line;
+    }
+
+    public setColumn(column: number): void {
+        this.tokenSource.column = column;
     }
 }

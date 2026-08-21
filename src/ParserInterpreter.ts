@@ -34,25 +34,25 @@ import { Transition } from "./atn/Transition.js";
 
 export class ParserInterpreter extends Parser {
     public rootContext: InterpreterRuleContext;
+    public overrideDecisionRoot: InterpreterRuleContext | null = null;
 
     protected parentContextStack: Array<[ParserRuleContext | null, number]> = [];
+
+    private overrideDecisionAlt = -1;
+    private overrideDecisionReached = false;
+    private decisionToDFA: DFA[];
+    private sharedContextCache = new PredictionContextCache();
+
+    private pushRecursionContextStates: BitSet;
 
     #overrideDecision = -1;
 
     #overrideDecisionInputIndex = -1;
-    #overrideDecisionAlt = -1;
-    #overrideDecisionReached = false;
-
-    #overrideDecisionRoot: InterpreterRuleContext | null = null;
 
     #grammarFileName: string;
     #atn: ATN;
     #ruleNames: string[];
     #vocabulary: Vocabulary;
-    #decisionToDFA: DFA[];
-    #sharedContextCache = new PredictionContextCache();
-
-    #pushRecursionContextStates;
 
     public constructor(grammarFileName: string, vocabulary: Vocabulary, ruleNames: string[], atn: ATN,
         input: TokenStream) {
@@ -63,26 +63,26 @@ export class ParserInterpreter extends Parser {
         this.#vocabulary = vocabulary;
 
         // Cache the ATN states where pushNewRecursionContext() must be called in `visitState()`.
-        this.#pushRecursionContextStates = new BitSet();
+        this.pushRecursionContextStates = new BitSet();
         for (const state of atn.states) {
             if (state instanceof StarLoopEntryState && state.precedenceRuleDecision) {
-                this.#pushRecursionContextStates.set(state.stateNumber);
+                this.pushRecursionContextStates.set(state.stateNumber);
             }
         }
 
-        this.#decisionToDFA = atn.decisionToState.map((ds, i) => {
+        this.decisionToDFA = atn.decisionToState.map((ds, i) => {
             return new DFA(ds, i);
         });
 
         // get atn simulator that knows how to do predictions
-        this.interpreter = new ParserATNSimulator(this, atn, this.#decisionToDFA, this.#sharedContextCache);
+        this.interpreter = new ParserATNSimulator(this, atn, this.decisionToDFA, this.sharedContextCache);
     }
 
     public override reset(): void {
         super.reset();
 
-        this.#overrideDecisionReached = false;
-        this.#overrideDecisionRoot = null;
+        this.overrideDecisionReached = false;
+        this.overrideDecisionRoot = null;
     }
 
     public override get atn(): ATN {
@@ -109,20 +109,19 @@ export class ParserInterpreter extends Parser {
         const startRuleStartState = this.#atn.ruleToStartState[startRuleIndex]!;
 
         this.rootContext = this.createInterpreterRuleContext(null, ATNState.INVALID_STATE_NUMBER, startRuleIndex);
-        if (startRuleStartState.isPrecedenceRule) {
+        if (startRuleStartState.isLeftRecursiveRule) {
             this.enterRecursionRule(this.rootContext, startRuleStartState.stateNumber, startRuleIndex, 0);
-        }
-        else {
+        } else {
             this.enterRule(this.rootContext, startRuleStartState.stateNumber, startRuleIndex);
         }
 
         while (true) {
             const p = this.atnState;
             switch ((p.constructor as typeof ATNState).stateType) {
-                case ATNState.RULE_STOP:
+                case ATNState.RULE_STOP: {
                     // pop; return from rule
-                    if (this.context?.isEmpty) {
-                        if (startRuleStartState.isPrecedenceRule) {
+                    if (this.context?.isEmpty()) {
+                        if (startRuleStartState.isLeftRecursiveRule) {
                             const result = this.context;
                             const parentContext = this.parentContextStack.pop()!;
                             this.unrollRecursionContexts(parentContext[0]);
@@ -138,8 +137,9 @@ export class ParserInterpreter extends Parser {
 
                     this.visitRuleStopState(p);
                     break;
+                }
 
-                default:
+                default: {
                     try {
                         this.visitState(p);
                     } catch (e) {
@@ -153,6 +153,7 @@ export class ParserInterpreter extends Parser {
                     }
 
                     break;
+                }
             }
         }
     }
@@ -160,17 +161,25 @@ export class ParserInterpreter extends Parser {
     public addDecisionOverride(decision: number, tokenIndex: number, forcedAlt: number): void {
         this.#overrideDecision = decision;
         this.#overrideDecisionInputIndex = tokenIndex;
-        this.#overrideDecisionAlt = forcedAlt;
+        this.overrideDecisionAlt = forcedAlt;
     }
 
-    public get overrideDecisionRoot(): InterpreterRuleContext | null {
-        return this.#overrideDecisionRoot;
+    public get overrideDecision(): number {
+        return this.#overrideDecision;
+    }
+
+    public get overrideDecisionInputIndex(): number {
+        return this.#overrideDecisionInputIndex;
     }
 
     public override enterRecursionRule(localctx: ParserRuleContext, state: number, ruleIndex: number,
         precedence: number): void {
         this.parentContextStack.push([this.context, localctx.invokingState]);
         super.enterRecursionRule(localctx, state, ruleIndex, precedence);
+    }
+
+    public get serializedATN(): number[] {
+        throw new Error("The ParserInterpreter does not support the serializedATN property.");
     }
 
     protected visitState(p: ATNState): void {
@@ -182,7 +191,7 @@ export class ParserInterpreter extends Parser {
         const transition = p.transitions[predictedAlt - 1];
         switch (transition.transitionType) {
             case Transition.EPSILON:
-                if (this.#pushRecursionContextStates.get(p.stateNumber) &&
+                if (this.pushRecursionContextStates.get(p.stateNumber) &&
                     !((transition.target.constructor as typeof ATNState).stateType === ATNState.LOOP_END)) {
                     // We are at the start of a left recursive rule's (...)* loop
                     // and we're not taking the exit branch of loop.
@@ -215,7 +224,7 @@ export class ParserInterpreter extends Parser {
                 const ruleStartState = transition.target as RuleStartState;
                 const ruleIndex = ruleStartState.ruleIndex;
                 const newContext = this.createInterpreterRuleContext(this.context, p.stateNumber, ruleIndex);
-                if (ruleStartState.isPrecedenceRule) {
+                if (ruleStartState.isLeftRecursiveRule) {
                     this.enterRecursionRule(newContext, ruleStartState.stateNumber, ruleIndex,
                         (transition as RuleTransition).precedence);
                 }
@@ -258,9 +267,9 @@ export class ParserInterpreter extends Parser {
             this.errorHandler.sync(this);
             const decision = p.decision;
             if (decision === this.#overrideDecision && this.inputStream.index === this.#overrideDecisionInputIndex &&
-                !this.#overrideDecisionReached) {
-                predictedAlt = this.#overrideDecisionAlt;
-                this.#overrideDecisionReached = true;
+                !this.overrideDecisionReached) {
+                predictedAlt = this.overrideDecisionAlt;
+                this.overrideDecisionReached = true;
             } else {
                 predictedAlt = this.interpreter.adaptivePredict(this.inputStream, decision, this.context);
             }
@@ -276,7 +285,7 @@ export class ParserInterpreter extends Parser {
 
     protected visitRuleStopState(p: ATNState): void {
         const ruleStartState = this.#atn.ruleToStartState[p.ruleIndex]!;
-        if (ruleStartState.isPrecedenceRule) {
+        if (ruleStartState.isLeftRecursiveRule) {
             const [parentContext, state] = this.parentContextStack.pop()!;
             this.unrollRecursionContexts(parentContext);
             this.state = state;

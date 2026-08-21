@@ -20,7 +20,7 @@ const n = 0xE6546B64;
 
 /** A class that implements the Murmur hash algorithm. */
 export class MurmurHash {
-    static readonly #defaultSeed = 701;
+    private static readonly defaultSeed = 701;
 
     private constructor() { /**/ }
 
@@ -31,7 +31,7 @@ export class MurmurHash {
      *
      * @returns the intermediate hash value
      */
-    public static initialize(seed = MurmurHash.#defaultSeed): number {
+    public static initialize(seed = MurmurHash.defaultSeed): number {
         return seed;
     }
 
@@ -68,7 +68,7 @@ export class MurmurHash {
      *
      * @returns the final hash result
      */
-    public static finish = (hash: number, entryCount: number): number => {
+    public static finish(hash: number, entryCount: number): number {
         hash ^= entryCount * 4;
         hash ^= hash >>> 16;
         hash = Math.imul(hash, 0x85EBCA6B);
@@ -87,7 +87,7 @@ export class MurmurHash {
      *
      * @returns The computed hash.
      */
-    public static hashCode = (value: number, seed?: number): number => {
-        return MurmurHash.finish(MurmurHash.update(seed ?? MurmurHash.#defaultSeed, value), 1);
+    public static hashCode(value: number, seed?: number): number {
+        return MurmurHash.finish(MurmurHash.update(seed ?? MurmurHash.defaultSeed, value), 1);
     };
 }

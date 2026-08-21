@@ -27,6 +27,7 @@ import type { IntStream } from "./IntStream.js";
 import type { ParseTreePattern } from "./tree/pattern/ParseTreePattern.js";
 import { Lexer } from "./Lexer.js";
 import { ParseTreePatternMatcher } from "./tree/pattern/ParseTreePatternMatcher.js";
+import { ParseInfo } from "./atn/ParseInfo.js";
 
 export interface IDebugPrinter {
     println(s: string): void;
@@ -88,17 +89,17 @@ export abstract class Parser extends Recognizer<ParserATNSimulator> {
      * implemented as a parser listener so this field is not directly used by
      * other parser methods.
      */
-    #tracer: TraceListener | null = null;
+    private tracer: TraceListener | null = null;
 
     /**
      * This field holds the deserialized {@link ATN} with bypass alternatives, created
-     * lazily upon first demand. In 4.10 I changed from map<serializedATNstring, ATN>
+     * lazily upon first demand. In 4.10 I changed from map<serializedATNString, ATN>
      * since we only need one per parser object and also it complicates other targets
      * that don't use ATN strings.
      *
      * @see ATNDeserializationOptions#isGenerateRuleBypassTransitions()
      */
-    #bypassAltsAtnCache: ATN | null = null;
+    private bypassAltsAtnCache: ATN | null = null;
 
     #inputStream!: TokenStream;
 
@@ -121,6 +122,7 @@ export abstract class Parser extends Recognizer<ParserATNSimulator> {
         this.errorHandler.reset(this);
         this.context = null;
         this.syntaxErrors = 0;
+        this.matchedEOF = false;
         this.setTrace(false);
         this.precedenceStack = [];
         this.precedenceStack.push(0);
@@ -150,6 +152,10 @@ export abstract class Parser extends Recognizer<ParserATNSimulator> {
     public match(ttype: number): Token {
         let t = this.getCurrentToken();
         if (t.type === ttype) {
+            if (ttype === Token.EOF) {
+                this.matchedEOF = true;
+            }
+
             this.errorHandler.reportMatch(this);
             this.consume();
         } else {
@@ -340,19 +346,19 @@ export abstract class Parser extends Recognizer<ParserATNSimulator> {
      * implement the {@link getSerializedATN()} method.
      */
     public getATNWithBypassAlts(): ATN {
-        const serializedAtn = this.getSerializedATN();
+        const serializedAtn = this.serializedATN;
         if (serializedAtn === null) {
             throw new Error("The current parser does not support an ATN with bypass alternatives.");
         }
 
-        if (this.#bypassAltsAtnCache !== null) {
-            return this.#bypassAltsAtnCache;
+        if (this.bypassAltsAtnCache !== null) {
+            return this.bypassAltsAtnCache;
         }
 
         const deserializationOptions = { readOnly: false, verifyATN: true, generateRuleBypassTransitions: true };
-        this.#bypassAltsAtnCache = new ATNDeserializer(deserializationOptions).deserialize(serializedAtn);
+        this.bypassAltsAtnCache = new ATNDeserializer(deserializationOptions).deserialize(serializedAtn);
 
-        return this.#bypassAltsAtnCache;
+        return this.bypassAltsAtnCache;
     }
 
     /**
@@ -453,8 +459,8 @@ export abstract class Parser extends Recognizer<ParserATNSimulator> {
 
     public addContextToParseTree(): void {
         // add current context to parent if we have a parent
-        if (this.context?.parent !== null) {
-            this.context!.parent.addChild(this.context!);
+        if (this.context?.parent) {
+            this.context.parent.addChild(this.context);
         }
     }
 
@@ -473,8 +479,14 @@ export abstract class Parser extends Recognizer<ParserATNSimulator> {
     }
 
     public exitRule(): void {
-        this.context!.stop = this.inputStream.LT(-1);
-        // trigger event on _ctx, before it reverts to parent
+        if (this.matchedEOF) {
+            // If we have matched EOF, it cannot consume past EOF so we use LT(1) here.
+            this.context!.stop = this.inputStream.LT(1); // LT(1) will be end of file
+        } else {
+            this.context!.stop = this.inputStream.LT(-1); // stop node is what we just matched
+        }
+
+        // Trigger event on context, before it reverts to parent.
         this.triggerExitRuleEvent();
         this.state = this.context!.invokingState;
         this.context = this.context!.parent;
@@ -485,9 +497,9 @@ export abstract class Parser extends Recognizer<ParserATNSimulator> {
         // if we have new localctx, make sure we replace existing ctx
         // that is previous child of parse tree
         if (this.buildParseTrees && this.context !== localctx) {
-            if (this.context!.parent !== null) {
-                this.context!.parent.removeLastChild();
-                this.context!.parent.addChild(localctx);
+            if (this.context?.parent) {
+                this.context.parent.removeLastChild();
+                this.context.parent.addChild(localctx);
             }
         }
         this.context = localctx;
@@ -502,9 +514,9 @@ export abstract class Parser extends Recognizer<ParserATNSimulator> {
     public getPrecedence(): number {
         if (this.precedenceStack.length === 0) {
             return -1;
-        } else {
-            return this.precedenceStack[this.precedenceStack.length - 1];
         }
+
+        return this.precedenceStack[this.precedenceStack.length - 1];
     }
 
     public enterRecursionRule(localctx: ParserRuleContext, state: number, ruleIndex: number, precedence: number): void {
@@ -567,11 +579,6 @@ export abstract class Parser extends Recognizer<ParserATNSimulator> {
 
     public override precpred(_localctx: ParserRuleContext | null, precedence: number): boolean {
         return precedence >= this.precedenceStack[this.precedenceStack.length - 1];
-    }
-
-    public inContext(_context: string): boolean {
-        // TODO: useful in parser?
-        return false;
     }
 
     /**
@@ -700,6 +707,15 @@ export abstract class Parser extends Recognizer<ParserATNSimulator> {
         return this.inputStream.getSourceName();
     }
 
+    public override getParseInfo(): ParseInfo | undefined {
+        const interp = this.interpreter;
+        if (interp instanceof ProfilingATNSimulator) {
+            return new ParseInfo(interp);
+        }
+
+        return undefined;
+    }
+
     public setProfile(profile: boolean): void {
         const interp = this.interpreter;
         const saveMode = interp.predictionMode;
@@ -724,14 +740,14 @@ export abstract class Parser extends Recognizer<ParserATNSimulator> {
      */
     public setTrace(trace: boolean): void {
         if (!trace) {
-            this.removeParseListener(this.#tracer);
-            this.#tracer = null;
+            this.removeParseListener(this.tracer);
+            this.tracer = null;
         } else {
-            if (this.#tracer !== null) {
-                this.removeParseListener(this.#tracer);
+            if (this.tracer !== null) {
+                this.removeParseListener(this.tracer);
             }
-            this.#tracer = new TraceListener(this);
-            this.addParseListener(this.#tracer);
+            this.tracer = new TraceListener(this);
+            this.addParseListener(this.tracer);
         }
     }
 

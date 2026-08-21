@@ -6,6 +6,7 @@
 /* eslint-disable jsdoc/require-returns */
 
 import { Token } from "../Token.js";
+import { HashMap } from "../misc/HashMap.js";
 import type { IntervalSet } from "../misc/IntervalSet.js";
 import { ObjectEqualityComparator } from "../misc/ObjectEqualityComparator.js";
 import { OrderedHashMap } from "../misc/OrderedHashMap.js";
@@ -61,14 +62,15 @@ export class ATNSerializer {
 
         for (const set of sets) {
             const containsEof = set.contains(Token.EOF);
-            if (containsEof && set.get(0).stop === Token.EOF) {
-                data.push(set.length - 1);
+            const intervals = [...set];
+            if (containsEof && intervals[0].stop === Token.EOF) {
+                data.push(intervals.length - 1);
             } else {
-                data.push(set.length);
+                data.push(intervals.length);
             }
 
             data.push(containsEof ? 1 : 0);
-            for (const interval of set) {
+            for (const interval of intervals) {
                 if (interval.start === Token.EOF) {
                     if (interval.stop === Token.EOF) {
                         continue;
@@ -118,8 +120,7 @@ export class ATNSerializer {
         this.addRuleStatesAndLexerTokenTypes();
         this.addModeStartStates();
 
-        let setIndices = null;
-        setIndices = this.addSets();
+        const setIndices = this.addSets();
         this.addEdges(edgeCount, setIndices);
         this.addDecisionStartStates();
         this.addLexerActions();
@@ -212,11 +213,10 @@ export class ATNSerializer {
     }
 
     private addEdges(): number;
-    private addEdges(edgeCount: number, setIndices: Map<IntervalSet, number>): void;
+    private addEdges(edgeCount: number, setIndices: HashMap<IntervalSet, number>): void;
     private addEdges(...args: unknown[]): number | void {
         switch (args.length) {
             case 0: {
-
                 let edgeCount = 0;
                 this.data.push(this.atn.states.length);
                 for (const s of this.atn.states) {
@@ -235,7 +235,6 @@ export class ATNSerializer {
                     }
 
                     this.data.push(stateType);
-
                     this.data.push(s.ruleIndex);
 
                     if ((s.constructor as typeof ATNState).stateType === ATNState.LOOP_END) {
@@ -264,7 +263,7 @@ export class ATNSerializer {
             }
 
             case 2: {
-                const [edgeCount, setIndices] = args as [number, Map<IntervalSet, number>];
+                const [edgeCount, setIndices] = args as [number, HashMap<IntervalSet, number>];
 
                 this.data.push(edgeCount);
                 for (const s of this.atn.states) {
@@ -374,9 +373,9 @@ export class ATNSerializer {
         }
     }
 
-    private addSets(): Map<IntervalSet, number> {
+    private addSets(): HashMap<IntervalSet, number> {
         ATNSerializer.serializeSets(this.data, [...this.sets.keys()]);
-        const setIndices = new Map<IntervalSet, number>();
+        const setIndices = new HashMap<IntervalSet, number>();
         let setIndex = 0;
         for (const s of this.sets.keys()) {
             setIndices.set(s, setIndex++);

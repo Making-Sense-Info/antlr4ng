@@ -20,15 +20,12 @@ export abstract class PredictionContext {
      */
     public static readonly EMPTY_RETURN_STATE = 0x7FFFFFFF;
 
-    // TODO: Temporarily here. Should be moved to EmptyPredictionContext. It's initialized in that context class.
-    public static EMPTY: PredictionContext;
-
     public static traceATNSimulator = false;
 
-    #cachedHashCode: number;
+    private cachedHashCode: number;
 
     public constructor(cachedHashCode: number) {
-        this.#cachedHashCode = cachedHashCode;
+        this.cachedHashCode = cachedHashCode;
     }
 
     protected static calculateEmptyHashCode(): number {
@@ -72,7 +69,7 @@ export abstract class PredictionContext {
     }
 
     public hashCode(): number {
-        return this.#cachedHashCode;
+        return this.cachedHashCode;
     }
 
     public toString(_recog?: Recognizer<ATNSimulator>): string {

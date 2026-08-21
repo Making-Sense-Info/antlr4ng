@@ -80,8 +80,11 @@ export class CommonToken implements WritableToken {
         this.stop = details.stop ?? 0;
         this.#text = details.text;
 
-        if (details.source[0] !== null) {
+        if (details.line === undefined && details.source[0] !== null) {
             this.line = details.source[0].line;
+        }
+
+        if (details.column === undefined && details.source[0] !== null) {
             this.column = details.source[0].column;
         }
     }
@@ -99,12 +102,7 @@ export class CommonToken implements WritableToken {
      * @param token The token to copy.
      */
     public static fromToken(token: Token): CommonToken {
-        let source: [TokenSource | null, CharStream | null];
-        if ("source" in token) {
-            source = (token as CommonToken).source;
-        } else {
-            source = [token.tokenSource, token.inputStream];
-        }
+        const source: [TokenSource | null, CharStream | null] = [token.tokenSource, token.inputStream];
 
         return new CommonToken({
             type: token.type,
@@ -140,6 +138,10 @@ export class CommonToken implements WritableToken {
 
     public get inputStream(): CharStream | null {
         return this.source[1];
+    }
+
+    public set inputStream(input: CharStream | null) {
+        this.source[1] = input;
     }
 
     /**
@@ -193,7 +195,7 @@ export class CommonToken implements WritableToken {
     }
 
     public get text(): string | undefined {
-        if (this.#text) {
+        if (this.#text !== undefined) {
             return this.#text;
         }
 

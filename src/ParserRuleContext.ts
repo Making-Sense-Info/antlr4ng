@@ -57,7 +57,7 @@ export class ParserRuleContext implements ParseTree {
      */
     public invokingState: number;
 
-    #parent: ParserRuleContext | null;
+    public parent: ParserRuleContext | null;
 
     /**
      * A rule context is a record of a single rule invocation. It knows
@@ -79,13 +79,13 @@ export class ParserRuleContext implements ParseTree {
      * ParserRuleContext.
      */
     public constructor(parent: ParserRuleContext | null, invokingStateNumber: number = -1) {
-        this.#parent = parent;
+        this.parent = parent;
         this.invokingState = invokingStateNumber;
     }
 
     /** Copy a context */
     public copyFrom(ctx: ParserRuleContext): void {
-        this.#parent = ctx.#parent;
+        this.parent = ctx.parent;
         this.invokingState = ctx.invokingState;
         this.children.slice(0, this.children.length);
         this.start = ctx.start;
@@ -221,19 +221,15 @@ export class ParserRuleContext implements ParseTree {
     }
 
     public getSourceInterval(): Interval {
-        if (this.start === null || this.stop === null) {
+        if (this.start === null) {
             return Interval.INVALID_INTERVAL;
-        } else {
-            return new Interval(this.start.tokenIndex, this.stop.tokenIndex);
         }
-    }
 
-    public get parent(): ParserRuleContext | null {
-        return this.#parent;
-    }
+        if (this.stop === null || this.stop.tokenIndex < this.start.tokenIndex) {
+            return new Interval(this.start.tokenIndex, this.start.tokenIndex - 1);
+        }
 
-    public set parent(parent: ParserRuleContext | null) {
-        this.#parent = parent;
+        return new Interval(this.start.tokenIndex, this.stop.tokenIndex);
     }
 
     public depth(): number {
@@ -309,11 +305,11 @@ export class ParserRuleContext implements ParseTree {
      * Print out a whole tree, not just a node, in LISP format
      * (root child1 .. childN). Print just a node if this is a leaf.
      */
-    public toStringTree(recog: Parser | null): string;
+    public toStringTree(recog?: Parser): string;
     public toStringTree(ruleNames: string[] | null, recog: Parser): string;
     public toStringTree(...args: unknown[]): string {
-        if (args.length === 1) {
-            return Trees.toStringTree(this, null, args[0] as Parser | null);
+        if (args.length < 2) {
+            return Trees.toStringTree(this, null, args[0] as Parser | undefined);
         }
 
         return Trees.toStringTree(this, args[0] as string[] | null, args[1] as Parser);

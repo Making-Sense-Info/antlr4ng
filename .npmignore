@@ -8,9 +8,9 @@ dist/*.map
 src/
 build/
 
-jest.config.ts
 .eslintignore
 .eslintrc.json
 .project
 tsconfig.json
 cspell.json
+vitest.config.ts

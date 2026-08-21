@@ -4,7 +4,7 @@
  * can be found in the LICENSE.txt file in the project root.
  */
 
-export class BitSet implements Iterable<number>{
+export class BitSet implements Iterable<number> {
     private data: Uint32Array;
 
     /**
@@ -158,8 +158,7 @@ export class BitSet implements Iterable<number>{
 
         // Iterate over all set bits.
         for (const index of this) {
-            // Use the first index > than the specified value index.
-            if (index > fromIndex) {
+            if (index >= fromIndex) {
                 return index;
             }
         }
