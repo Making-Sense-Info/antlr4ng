@@ -12,8 +12,6 @@ permissions:
 jobs:
     check_if_version_upgraded:
         name: Check if version upgrade
-        # When someone forks the repo and opens a PR we want to enable the tests to be run (the previous jobs)
-        # but obviously only us should be allowed to release.
         if: |
             github.event_name == 'push' ||
             github.event.pull_request.head.repo.owner.login == github.event.pull_request.base.repo.owner.login
@@ -46,7 +44,10 @@ jobs:
             - uses: actions/setup-node@v6
               with:
                   node-version: 24
-                  registry-url: "https://registry.npmjs.org"
+                  # Do not set registry-url: it writes an empty _authToken and blocks OIDC.
+
+            - name: Ensure npm supports OIDC trusted publishing
+              run: npm install -g npm@latest
 
             - name: Install dependencies
               run: yarn --frozen-lockfile
@@ -78,5 +79,3 @@ jobs:
             - name: Publish package (trusted publishing)
               if: steps.npm_version_check.outputs.should_publish == 'true'
               run: npm publish --access public --provenance
-              env:
-                  NODE_AUTH_TOKEN: ""
