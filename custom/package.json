@@ -4,7 +4,10 @@
     "description": "Alternative JavaScript/TypeScript runtime for ANTLR4",
     "main": "dist/index.js",
     "types": "dist/index.d.ts",
-    "repository": "https://github.com/Making-Sense-Info/antlr4ng",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/Making-Sense-Info/antlr4ng.git"
+    },
     "keywords": [
         "lexer",
         "parser",

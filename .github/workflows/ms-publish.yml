@@ -6,12 +6,14 @@ on:
             - master
 
 permissions:
-    id-token: write # Required for OIDC trusted publishing
+    id-token: write # Required for OIDC
     contents: read
 
 jobs:
     check_if_version_upgraded:
         name: Check if version upgrade
+        # When someone forks the repo and opens a PR we want to enables the tests to be run (the previous jobs)
+        # but obviously only us should be allowed to release.
         if: |
             github.event_name == 'push' ||
             github.event.pull_request.head.repo.owner.login == github.event.pull_request.base.repo.owner.login
@@ -40,28 +42,18 @@ jobs:
             contents: read
         steps:
             - uses: actions/checkout@v6
-
             - uses: actions/setup-node@v6
               with:
                   node-version: 24
-                  # Do not set registry-url: it writes an empty _authToken and blocks OIDC.
-
-            - name: Ensure npm supports OIDC trusted publishing
-              run: npm install -g npm@latest
-
+                  registry-url: "https://registry.npmjs.org"
             - name: Install dependencies
               run: yarn --frozen-lockfile
-
-            - name: Build package
-              run: yarn build
-
+            - run: yarn build
             - name: Customize package for @making-sense/antlr4ng
               run: |
                   chmod +x custom/prepublish.sh
                   custom/prepublish.sh
-                  # CI already built + customized dist; avoid prepublishOnly rebuilding and undoing the CJS rename.
                   node -e "const fs=require('fs'); const p=JSON.parse(fs.readFileSync('package.json','utf8')); delete p.scripts.prepublishOnly; fs.writeFileSync('package.json', JSON.stringify(p, null, 4) + '\n');"
-
             - name: Check if version already exists on npm
               id: npm_version_check
               shell: bash
@@ -75,7 +67,8 @@ jobs:
                     echo "Package ${PKG_NAME}@${PKG_VERSION} not found on npm. Publish enabled."
                     echo "should_publish=true" >> "$GITHUB_OUTPUT"
                   fi
-
             - name: Publish package (trusted publishing)
               if: steps.npm_version_check.outputs.should_publish == 'true'
               run: npm publish --access public --provenance
+              env:
+                  NODE_AUTH_TOKEN: ""
