@@ -1,58 +1,82 @@
 name: Publish to npm
 
 on:
-  push:
-    branches:
-      - master 
+    push:
+        branches:
+            - master
+
+permissions:
+    id-token: write # Required for OIDC trusted publishing
+    contents: read
 
 jobs:
-  check_if_version_upgraded:
-    name: Check if version upgrade
-    # When someone forks the repo and opens a PR we want to enables the tests to be run (the previous jobs)
-    # but obviously only us should be allowed to release.
-    # In the following check we make sure that we own the branch this CI workflow is running on before continuing.
-    # Without this check, trying to release would fail anyway because only us have the correct secret.NPM_TOKEN but
-    # it's cleaner to stop the execution instead of letting the CI crash.
-    if: |
-        github.event_name == 'push' || 
-        github.event.pull_request.head.repo.owner.login == github.event.pull_request.base.repo.owner.login
-    runs-on: ubuntu-latest
-    outputs:
-        from_version: ${{ steps.step1.outputs.from_version }}
-        to_version: ${{ steps.step1.outputs.to_version }}
-        is_upgraded_version: ${{ steps.step1.outputs.is_upgraded_version }}
-        is_pre_release: ${{steps.step1.outputs.is_pre_release }}
-    steps:
-        - uses: garronej/ts-ci@v2.1.0
-          id: step1
-          with:
-              action_name: is_package_json_version_upgraded
-              branch: ${{ github.head_ref || github.ref }}
+    check_if_version_upgraded:
+        name: Check if version upgrade
+        # When someone forks the repo and opens a PR we want to enable the tests to be run (the previous jobs)
+        # but obviously only us should be allowed to release.
+        if: |
+            github.event_name == 'push' ||
+            github.event.pull_request.head.repo.owner.login == github.event.pull_request.base.repo.owner.login
+        runs-on: ubuntu-latest
+        outputs:
+            from_version: ${{ steps.step1.outputs.from_version }}
+            to_version: ${{ steps.step1.outputs.to_version }}
+            is_upgraded_version: ${{ steps.step1.outputs.is_upgraded_version }}
+            is_pre_release: ${{ steps.step1.outputs.is_pre_release }}
+        steps:
+            - uses: garronej/ts-ci@v2.1.0
+              id: step1
+              with:
+                  action_name: is_package_json_version_upgraded
+                  branch: ${{ github.head_ref || github.ref }}
 
-  publish:
-    runs-on: ubuntu-latest
-    needs: check_if_version_upgraded
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+    publish_on_npm:
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        runs-on: ubuntu-latest
+        needs: check_if_version_upgraded
+        concurrency:
+            group: npm-publish-master
+            cancel-in-progress: false
+        permissions:
+            id-token: write
+            contents: read
+        steps:
+            - uses: actions/checkout@v6
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
+            - uses: actions/setup-node@v6
+              with:
+                  node-version: 24
+                  registry-url: "https://registry.npmjs.org"
 
-      - name: Install dependencies
-        run: yarn
+            - name: Install dependencies
+              run: yarn --frozen-lockfile
 
-      - name: Build package
-        run: yarn build
+            - name: Build package
+              run: yarn build
 
-      - name: Customize package
-        run: |
-            chmod +x custom/prepublish.sh
-            custom/prepublish.sh
+            - name: Customize package for @making-sense/antlr4ng
+              run: |
+                  chmod +x custom/prepublish.sh
+                  custom/prepublish.sh
+                  # CI already built + customized dist; avoid prepublishOnly rebuilding and undoing the CJS rename.
+                  node -e "const fs=require('fs'); const p=JSON.parse(fs.readFileSync('package.json','utf8')); delete p.scripts.prepublishOnly; fs.writeFileSync('package.json', JSON.stringify(p, null, 4) + '\n');"
 
-      - name: Publish to npm
-        run: yarn publish
-        env:
-          NPM_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+            - name: Check if version already exists on npm
+              id: npm_version_check
+              shell: bash
+              run: |
+                  PKG_NAME=$(node -p "require('./package.json').name")
+                  PKG_VERSION=$(node -p "require('./package.json').version")
+                  if npm view "${PKG_NAME}@${PKG_VERSION}" version >/dev/null 2>&1; then
+                    echo "Package ${PKG_NAME}@${PKG_VERSION} already published. Skipping publish."
+                    echo "should_publish=false" >> "$GITHUB_OUTPUT"
+                  else
+                    echo "Package ${PKG_NAME}@${PKG_VERSION} not found on npm. Publish enabled."
+                    echo "should_publish=true" >> "$GITHUB_OUTPUT"
+                  fi
+
+            - name: Publish package (trusted publishing)
+              if: steps.npm_version_check.outputs.should_publish == 'true'
+              run: npm publish --access public --provenance
+              env:
+                  NODE_AUTH_TOKEN: ""
